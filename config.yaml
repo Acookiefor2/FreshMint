@@ -1,0 +1,37 @@
+# FreshMint Configuration File
+# Define the tools and packages you want installed on your new machine.
+
+# System packages separated by OS.
+# macOS uses Homebrew, Linux (Debian/Ubuntu) uses Apt.
+system_packages:
+  macos:
+    - git
+    - curl
+    - zsh
+    - htop
+    - neovim
+    - ffmpeg
+  linux:
+    - git
+    - curl
+    - zsh
+    - htop
+    - neovim
+    - ffmpeg
+    - build-essential
+
+# Global Python tools installed via pip3
+python_packages:
+  - black
+  - flake8
+  - isort
+  - poetry
+  - boto3
+
+# VS Code extensions installed via the `code` CLI
+vscode_extensions:
+  - ms-python.python
+  - ms-python.vscode-pylance
+  - esbenp.prettier-vscode
+  - pkief.material-icon-theme
+  - yzhang.markdown-all-in-one
