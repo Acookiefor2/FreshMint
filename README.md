@@ -1,5 +1,3 @@
-Here is the raw text for the README.md file, ready to be copied and pasted directly:
-
 # 🌿 FreshMint
 
 **FreshMint** is a lightweight, Python-based system automation tool designed to instantly provision a brand-new development machine. By reading a simple `config.yaml` file, FreshMint handles the tedious parts of setting up a Mac or Linux machine so you can start coding immediately.
