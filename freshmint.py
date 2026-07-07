@@ -8,6 +8,8 @@ with system packages, Python tools, and VS Code extensions.
 import argparse
 import os
 import platform
+import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -57,7 +59,8 @@ def run_command(command: list[str], dry_run: bool = False) -> bool:
     Returns:
         True if the command succeeded (or was dry-run), False otherwise.
     """
-    cmd_str = " ".join(command)
+    # Use shlex.join for accurate shell quoting in dry-run output
+    cmd_str = shlex.join(command)
     
     if dry_run:
         log_info(f"[DRY RUN] {cmd_str}", icon=ICON_DRY)
@@ -91,11 +94,19 @@ def load_config(config_path: str) -> dict:
         sys.exit(1)
         
     with open(path, 'r', encoding='utf-8') as f:
+        # FIX 7 (Re-fixed): Catch YAML syntax errors cleanly without raw tracebacks
         try:
-            return yaml.safe_load(f)
+            config = yaml.safe_load(f)
         except yaml.YAMLError as e:
             log_error(f"Failed to parse YAML: {e}")
             sys.exit(1)
+        
+    # Catch empty files or files that don't resolve to a top-level dictionary
+    if not config or not isinstance(config, dict):
+        log_error(f"Configuration file is empty or invalid: {path}")
+        sys.exit(1)
+        
+    return config
 
 
 def detect_os() -> str:
@@ -112,50 +123,54 @@ def detect_os() -> str:
 
 def check_command_exists(command: str) -> bool:
     """Check if a CLI command exists on the system PATH."""
-    result = subprocess.run(
-        ["which", command],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    return result.returncode == 0
+    # Use shutil.which instead of spawning a subprocess
+    return shutil.which(command) is not None
 
 
 def ensure_homebrew(dry_run: bool) -> bool:
     """
     Check if Homebrew is installed. If not, attempt to install it.
-    Returns True if Homebrew is available.
+    Returns True if Homebrew is available (or in dry-run).
     """
     if check_command_exists("brew"):
         return True
 
     log_warning("Homebrew is not installed.")
     
+    # Return True on dry-run so the user can preview the package list
     if dry_run:
-        log_info("[DRY RUN] Would attempt to install Homebrew...", icon=ICON_DRY)
-        return False
+        log_info("[DRY RUN] Homebrew missing. Would attempt to install Homebrew first...", icon=ICON_DRY)
+        return True
 
     # Prompt the user before running a remote install script
     try:
         response = input("🤔  Do you want to install Homebrew now? (y/n): ").strip().lower()
         if response == 'y':
             log_info("Installing Homebrew... (This may require sudo/password)")
+            
+            # SECURITY NOTE (6b): This intentionally uses the official curl-pipe-to-bash 
+            # pattern mandated by Homebrew. It executes a remote script, which is inherently
+            # risky, but is the standard, supported installation method on macOS.
             brew_install_cmd = [
                 "/bin/bash", "-c",
                 "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
             ]
-            # Note: We don't use run_command here because we WANT to show the brew output 
+            
+            # We don't use run_command here because we WANT to show the brew output 
             # as it gives the user interactive prompts and progress bars.
             result = subprocess.run(brew_install_cmd)
             
             if result.returncode == 0:
                 log_success("Homebrew installed successfully!")
-                # Add to PATH for current script execution (Apple Silicon path)
-                if platform.machine() == "arm64":
-                    os.environ["PATH"] += "/opt/homebrew/bin:"
+                # Add leading colon separator for PATH
+                os.environ["PATH"] += ":/opt/homebrew/bin"
                 return True
             else:
                 log_error("Homebrew installation failed.")
                 return False
+        else:
+            # Explicit feedback when user declines
+            log_warning("Homebrew installation declined by user.")
     except KeyboardInterrupt:
         log_warning("Homebrew installation cancelled by user.")
     
@@ -181,6 +196,7 @@ def install_system_packages(config: dict, os_type: str, dry_run: bool) -> None:
             log_error("Cannot install macOS packages without Homebrew.")
             return
             
+        # Install individually to honor per-package failure tolerance
         for pkg in packages:
             cmd = ["brew", "install", pkg]
             if run_command(cmd, dry_run):
@@ -194,7 +210,7 @@ def install_system_packages(config: dict, os_type: str, dry_run: bool) -> None:
         # Update apt lists first
         run_command(["sudo", "apt", "update", "-y"], dry_run)
         
-        # Apt allows installing multiple packages at once
+        # Batched for performance. If it fails, it fails as a batch.
         cmd = ["sudo", "apt", "install", "-y"] + packages
         if run_command(cmd, dry_run):
             log_success(f"Installed {len(packages)} Linux packages via Apt")
@@ -214,10 +230,12 @@ def install_python_packages(config: dict, dry_run: bool) -> None:
         log_error(f"'{pip_cmd}' not found. Please install Python 3 first.")
         return
 
-    # Ensure pip is up to date
+    # Attempt to upgrade pip. We intentionally ignore the return value here:
+    # a failure to upgrade pip is non-fatal, and usually happens inside restricted
+    # managed environments. As long as the subsequent package install succeeds, we're good.
     run_command([pip_cmd, "install", "--upgrade", "pip"], dry_run)
 
-    # Install packages in a batch to speed up resolution
+    # Batched for dependency resolution performance.
     cmd = [pip_cmd, "install", "--user"] + packages
     if run_command(cmd, dry_run):
         log_success(f"Installed {len(packages)} Python packages via {pip_cmd}")
@@ -239,6 +257,7 @@ def install_vscode_extensions(config: dict, dry_run: bool) -> None:
         )
         return
 
+    # Install individually to honor per-package failure tolerance
     for ext in extensions:
         cmd = ["code", "--install-extension", ext]
         if run_command(cmd, dry_run):

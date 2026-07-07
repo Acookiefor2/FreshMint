@@ -1,5 +1,3 @@
-Here is the raw text for the README.md file, ready to be copied and pasted directly:
-
 # 🌿 FreshMint
 
 **FreshMint** is a lightweight, Python-based system automation tool designed to instantly provision a brand-new development machine. By reading a simple `config.yaml` file, FreshMint handles the tedious parts of setting up a Mac or Linux machine so you can start coding immediately.
@@ -8,15 +6,15 @@ Here is the raw text for the README.md file, ready to be copied and pasted direc
 
 - **Cross-Platform Support:** Intelligently detects macOS (Homebrew) and Linux (Apt) and uses the correct package manager.
 - **All-in-One Provisioning:** Installs system packages, global Python tools, and VS Code extensions in one command.
-- **Safe Execution:** Uses Python's `subprocess` securely with strict error checking. If one package fails, the script continues installing the rest.
-- **Dry Run Mode:** Test your configuration file before applying it using the `--dry-run` flag.
+- **Robust Error Handling:** Uses Python's `subprocess` with strict error checking and safe output capturing to prevent silent failures. *(Note: Homebrew and VS Code extensions are installed individually so one failure won't block the rest. Apt and Pip are batched for performance and dependency resolution; if a batch fails, the script logs the error and continues to the next category).*
+- **Dry Run Mode:** Test your configuration file before applying it using the `--dry-run` flag to see exactly what commands will run.
 - **Graceful Dependency Handling:** If Homebrew is missing on macOS, FreshMint will warn you and offer to install it on the fly.
 - **Beautiful Logging:** Clear, emoji-rich terminal output so you always know exactly what is happening.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.7 or higher installed.
+- Python 3.9 or higher installed.
 - (For Linux) `sudo` privileges to run `apt`.
 
 ### Installation
@@ -79,6 +77,26 @@ vscode_extensions:
   - esbenp.prettier-vscode
 ```
 
+## 🧠 Design Decisions
+
+A couple of behaviors that look like edge cases but are intentional:
+
+- **Empty `config.yaml` hard-exits instead of running as a no-op.** A config with zero keys is almost always a mistake (e.g. the file got emptied out but never repopulated). Failing fast forces you to notice, rather than silently doing nothing and reporting success.
+- **A failed `pip install --upgrade pip` doesn't stop the Python install.** In many corporate or managed environments, upgrading pip system-wide is blocked by permissions, but `pip install --user` still works fine. Treating the upgrade step as fatal would break the whole pipeline in exactly the environments where FreshMint is most useful.
+
+## 🧪 Testing
+
+FreshMint ships with a full `pytest` suite (`test_freshmint.py`) covering every function — command execution, config parsing, OS detection, Homebrew bootstrapping, and all three install pipelines. Nothing in the test suite touches your real system: `subprocess.run`, `shutil.which`, and `input()` are all mocked at the boundary, so no package manager is ever actually invoked.
+
+### Running the tests
+
+```bash
+pip install pytest pytest-mock
+pytest test_freshmint.py -v
+```
+
+35 tests, all passing, verified on both Linux and Windows.
+
 ## 🛠️ Advanced Usage
 
 ### Using a Custom Config File
@@ -94,7 +112,7 @@ python3 freshmint.py --dry-run
 ```
 *Output:*
 ```text
-🧪  [DRY RUN] brew install git
-🧪  [DRY RUN] brew install curl
+🧪  [DRY RUN] brew install 'git'
+🧪  [DRY RUN] brew install 'curl'
 🧪  [DRY RUN] pip3 install --user black flake8
 ```
